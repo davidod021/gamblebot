@@ -90,7 +90,5 @@ export async function listCurrentOrders(fromRecord = 0, recordCount = 50): Promi
 }
 
 export async function getAccountFunds(): Promise<AccountFunds> {
-  return apiPost<AccountFunds>(ACCOUNT_BASE, 'getAccountFunds', {
-    wallet: 'UK wallet',
-  });
+  return apiPost<AccountFunds>(ACCOUNT_BASE, 'getAccountFunds', {});
 }

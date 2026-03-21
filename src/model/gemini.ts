@@ -27,8 +27,9 @@ export class GeminiSession implements ModelSession {
     this.ai = new GoogleGenAI({ apiKey: config.model.geminiApiKey });
     this.systemPrompt = systemPrompt;
     this.functionDeclarations = toolDefs.map(this._convertTool);
+    // Note: Gemini does not allow googleSearch grounding and functionDeclarations
+    // in the same request — use MODEL_PROVIDER=anthropic for web search capability.
     this.tools = [
-      { googleSearch: {} },                            // grounding — Gemini's web search
       { functionDeclarations: this.functionDeclarations },
     ];
   }

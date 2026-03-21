@@ -21,7 +21,7 @@ function optionalInt(name: string, fallback: number): number {
 }
 
 const provider = (process.env.MESSAGING_PROVIDER ?? 'whatsapp') as 'whatsapp' | 'telegram';
-const modelProvider = (process.env.MODEL_PROVIDER ?? 'anthropic') as 'anthropic' | 'gemini';
+const modelProvider = (process.env.MODEL_PROVIDER ?? 'anthropic') as 'anthropic' | 'gemini' | 'gemini-adk';
 
 function requiredForProvider(name: string, forProvider: 'whatsapp' | 'telegram'): string {
   const value = process.env[name];
@@ -33,7 +33,9 @@ function requiredForProvider(name: string, forProvider: 'whatsapp' | 'telegram')
 
 function requiredForModel(name: string, forModel: 'anthropic' | 'gemini'): string {
   const value = process.env[name];
-  if (!value && modelProvider === forModel) {
+  const activeIsGemini = modelProvider === 'gemini' || modelProvider === 'gemini-adk';
+  const needsThisKey = forModel === 'gemini' ? activeIsGemini : modelProvider === forModel;
+  if (!value && needsThisKey) {
     throw new Error(`Missing required environment variable for model provider ${forModel}: ${name}`);
   }
   return value ?? '';

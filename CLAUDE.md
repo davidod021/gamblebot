@@ -20,7 +20,8 @@ This is an autonomous AI betting agent that analyses British sports markets on t
 
 - `types.ts` — Provider-agnostic interfaces: `ModelSession`, `ToolDefinition`, `ContentBlock`, `ModelResponse`
 - `anthropic.ts` — `AnthropicSession`: uses `claude-opus-4-6` (or `ANTHROPIC_MODEL`) with `thinking: { type: 'adaptive' }` and the `web_search_20260209` server-side tool
-- `gemini.ts` — `GeminiSession`: uses Gemini 2.5 Pro (or `GEMINI_MODEL`) with `{ googleSearch: {} }` grounding and native function calling. Converts our tool schema to Gemini's `Type.*` format.
+- `gemini.ts` — `GeminiSession`: uses Gemini 2.5 Pro (or `GEMINI_MODEL`) with native function calling. Cannot mix Google Search grounding with function declarations in the same request.
+- `gemini-adk.ts` — `GeminiAdkSession`: uses Google ADK (`@google/adk`) with `GOOGLE_SEARCH` as a built-in tool alongside Betfair `FunctionTool`s. ADK handles the full tool-dispatch loop internally so `agent.ts` always receives `end_turn`. Use `MODEL_PROVIDER=gemini-adk`.
 - `index.ts` — `createSession(systemPrompt, tools)` factory; selects provider from `MODEL_PROVIDER` env var
 
 Both sessions maintain their own native message history internally to avoid lossy cross-format conversion (critical: Anthropic thinking blocks need their `signature` field preserved for multi-turn conversations).
@@ -66,7 +67,7 @@ The provider is selected by `MESSAGING_PROVIDER` (default `whatsapp`). All other
 ### Key configuration (`src/config.ts`)
 
 All settings come from environment variables (see `.env.example`). Critical ones:
-- `MODEL_PROVIDER` — `anthropic` (default) or `gemini`
+- `MODEL_PROVIDER` — `anthropic` (default), `gemini`, or `gemini-adk` (Gemini via Google ADK with Google Search)
 - `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` — only the key for the active provider is required
 - `ANTHROPIC_MODEL` / `GEMINI_MODEL` — optional model overrides
 - `LIVE_BETTING=false` — dry-run by default; set `true` to place real bets
