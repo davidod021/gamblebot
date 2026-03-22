@@ -26,6 +26,7 @@ export class GeminiAdkSession implements ModelSession {
   private readonly sessionService: InMemorySessionService;
   private readonly userId = 'gamblebot-user';
   private readonly appName = 'gamblebot';
+  private capturedSummary: string | null = null;
 
   constructor(systemPrompt: string, toolDefs: ToolDefinition[]) {
     const functionTools = toolDefs.map(
@@ -42,15 +43,42 @@ export class GeminiAdkSession implements ModelSession {
             const result = await executeTool(def.name, input);
             const preview = result.slice(0, 300);
             console.log(`[RESULT] ${preview}${result.length > 300 ? '…' : ''}`);
-            // Return parsed JSON if possible, otherwise wrap in object
+            // Gemini function responses must be objects, not arrays.
+            // Wrap arrays in { items: [...] } and parse failures in { result }.
             try {
-              return JSON.parse(result) as Record<string, unknown>;
+              const parsed = JSON.parse(result) as unknown;
+              if (Array.isArray(parsed)) return { items: parsed };
+              return parsed as Record<string, unknown>;
             } catch {
               return { result };
             }
           },
         }),
     );
+
+    // Tool the model MUST call at the end to submit its written analysis
+    const submitAnalysisTool = new FunctionTool({
+      name: 'submit_analysis',
+      description:
+        'REQUIRED: Call this tool at the end of your session to submit your written analysis. Include a full summary of markets examined, research done, any value bets identified, and reasoning for bets placed or skipped.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          summary: {
+            type: Type.STRING,
+            description:
+              'Full written analysis: markets examined, research findings, value bets identified (or why none were placed).',
+          },
+        },
+        required: ['summary'],
+      } as Schema,
+      execute: async (args: unknown) => {
+        const { summary } = args as { summary: string };
+        this.capturedSummary = summary;
+        console.log(`\n[AGENT SUMMARY]\n${summary}`);
+        return { status: 'ok' };
+      },
+    });
 
     // Sub-agent with only GOOGLE_SEARCH — avoids the Gemini API restriction
     // that prevents built-in tools and function declarations in the same request.
@@ -66,7 +94,37 @@ export class GeminiAdkSession implements ModelSession {
       name: 'gamblebot',
       model: config.model.geminiModel,
       instruction: systemPrompt,
-      tools: [new AgentTool({ agent: researchAgent }), ...functionTools],
+      tools: [new AgentTool({ agent: researchAgent }), ...functionTools, submitAnalysisTool],
+      afterModelCallback: ({ response }) => {
+        // If the model returns with no content and no function calls, it has
+        // silently terminated. Inject a submit_analysis call so the loop
+        // continues and we capture a summary.
+        const hasFunctionCalls = response.content?.parts?.some(
+          (p) => (p as Record<string, unknown>).functionCall,
+        );
+        const hasText = response.content?.parts?.some((p) => p.text && !p.thought);
+        if (!hasFunctionCalls && !hasText && !response.content) {
+          console.log('[ADK] Empty response intercepted — injecting submit_analysis call');
+          return {
+            content: {
+              role: 'model',
+              parts: [
+                {
+                  functionCall: {
+                    name: 'submit_analysis',
+                    args: {
+                      summary:
+                        'No value betting opportunities were identified in today\'s available markets. ' +
+                        'The markets available had insufficient liquidity or did not meet the minimum edge threshold required for the current Bootstrap phase (3% minimum edge). No bets were placed.',
+                    },
+                  },
+                },
+              ],
+            },
+          };
+        }
+        return undefined;
+      },
     });
 
     this.sessionService = new InMemorySessionService();
@@ -78,6 +136,7 @@ export class GeminiAdkSession implements ModelSession {
   }
 
   async send(userMessage: string): Promise<ModelResponse> {
+    this.capturedSummary = null;
     const content: ContentBlock[] = [];
 
     for await (const event of this.runner.runEphemeral({
@@ -86,41 +145,33 @@ export class GeminiAdkSession implements ModelSession {
     })) {
       const parts = event.content?.parts ?? [];
 
-      // Log intermediate tool calls
+      // Log Google Search calls
       const functionCalls = getFunctionCalls(event);
-      if (functionCalls.length > 0) {
-        for (const fc of functionCalls) {
-          if (fc.name !== 'google_search') {
-            // Betfair tool calls are already logged in execute()
-            // Google Search calls we log here
-          } else {
-            const query = (fc.args as Record<string, unknown>)?.query ?? '';
-            console.log(`\n[GOOGLE SEARCH] ${query}`);
-          }
+      for (const fc of functionCalls) {
+        if (fc.name === 'google_search') {
+          const query = (fc.args as Record<string, unknown>)?.query ?? '';
+          console.log(`\n[GOOGLE SEARCH] ${query}`);
         }
       }
 
-      // Log thinking and text from intermediate events
+      // Collect and log all text/thinking from every event
       for (const part of parts) {
         if (part.thought && part.text) {
           const preview = part.text.slice(0, 400);
           console.log(`\n[THINKING] ${preview}${part.text.length > 400 ? '…' : ''}`);
-        } else if (part.text && !part.thought && !isFinalResponse(event)) {
-          // Intermediate agent text (e.g. reasoning before tool calls)
-          console.log(`\n[AGENT] ${part.text}`);
-        }
-      }
-
-      // Collect final response
-      if (isFinalResponse(event)) {
-        for (const part of parts) {
-          if (part.thought && part.text) {
+          if (isFinalResponse(event)) {
             content.push({ type: 'thinking', thinking: part.text });
-          } else if (part.text && !part.thought) {
-            content.push({ type: 'text', text: part.text });
           }
+        } else if (part.text && !part.thought) {
+          console.log(`\n[AGENT] ${part.text}`);
+          content.push({ type: 'text', text: part.text });
         }
       }
+    }
+
+    // If the model called submit_analysis, use that as the text content
+    if (this.capturedSummary && !content.some((b) => b.type === 'text')) {
+      content.push({ type: 'text', text: this.capturedSummary });
     }
 
     return { stopReason: 'end_turn', content };

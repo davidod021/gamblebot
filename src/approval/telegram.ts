@@ -138,7 +138,6 @@ export async function sendNotification(text: string): Promise<void> {
     await axios.post(`${BASE_URL}/sendMessage`, {
       chat_id: config.telegram.chatId,
       text,
-      parse_mode: 'Markdown',
     });
   } catch (err) {
     // Non-fatal — log but don't crash the agent

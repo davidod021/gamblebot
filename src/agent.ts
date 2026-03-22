@@ -75,6 +75,15 @@ f* = (b × p − q) / b
 ## Mode
 ${config.betting.liveBetting ? '🔴 LIVE BETTING ENABLED — bets will be placed for real money.' : '📝 DRY RUN MODE — bets will be logged and notified but NOT placed.'}
 
+## REQUIRED: Always call submit_analysis to finish
+After completing all research and tool calls, you MUST call the **submit_analysis** tool with your written summary covering:
+1. Which markets you examined and why
+2. Key research findings (form, injuries, weather, etc.)
+3. Any value bets identified: selection, odds, your probability estimate, edge, and stake
+4. If no bets placed: a clear explanation of why each market was rejected
+
+Calling submit_analysis is mandatory — the session is not complete until you do.
+
 Today's date: ${new Date().toISOString().split('T')[0]}
 Current time (London): ${new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' })}`;
 
@@ -114,7 +123,8 @@ export async function runAgent(): Promise<void> {
 
   let response = await session.send(
     "Analyse today's British sports markets and identify value betting opportunities. " +
-      'Start by checking my account balance and any open bets, then research the upcoming markets.',
+      'Start by checking my account balance and any open bets, then research the upcoming markets. ' +
+      'When finished, call submit_analysis with your complete written summary.',
   );
 
   let iteration = 0;
