@@ -28,7 +28,7 @@ export class GeminiAdkSession implements ModelSession {
   private readonly appName = 'gamblebot';
   private capturedSummary: string | null = null;
 
-  constructor(systemPrompt: string, toolDefs: ToolDefinition[]) {
+  constructor(systemPrompt: string, toolDefs: ToolDefinition[], extraFunctionTools: FunctionTool[] = []) {
     const functionTools = toolDefs.map(
       (def) =>
         new FunctionTool({
@@ -94,7 +94,7 @@ export class GeminiAdkSession implements ModelSession {
       name: 'gamblebot',
       model: config.model.geminiModel,
       instruction: systemPrompt,
-      tools: [new AgentTool({ agent: researchAgent }), ...functionTools, submitAnalysisTool],
+      tools: [new AgentTool({ agent: researchAgent }), ...functionTools, ...extraFunctionTools, submitAnalysisTool],
       afterModelCallback: ({ response }) => {
         // If the model returns with no content and no function calls, it has
         // silently terminated. Inject a submit_analysis call so the loop

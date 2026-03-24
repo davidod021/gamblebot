@@ -5,6 +5,7 @@ import { shouldHaltSession, updatePeak, getPhase, PHASE_CONFIG } from './strateg
 import { getAccountFunds } from './betfair/client.js';
 import { createSession } from './model/index.js';
 import type { ToolUseBlock } from './model/types.js';
+import type { FunctionTool } from '@google/adk';
 
 const SYSTEM_PROMPT = `You are an expert sports betting analyst and trader specialising in British sports betting on the Betfair exchange.
 
@@ -89,7 +90,10 @@ Current time (London): ${new Date().toLocaleString('en-GB', { timeZone: 'Europe/
 
 const MAX_ITERATIONS = 40;
 
-export async function runAgent(): Promise<void> {
+export async function runAgent(options: {
+  extraFunctionTools?: FunctionTool[];
+  systemPromptSuffix?: string;
+} = {}): Promise<void> {
   const startTime = new Date();
   console.log('\n' + '='.repeat(50));
   console.log(`GambleBot Agent — ${startTime.toISOString()}`);
@@ -119,7 +123,9 @@ export async function runAgent(): Promise<void> {
       `Time: ${startTime.toLocaleString('en-GB', { timeZone: 'Europe/London' })}`,
   );
 
-  const session = createSession(SYSTEM_PROMPT, toolDefinitions);
+  const { extraFunctionTools = [], systemPromptSuffix = '' } = options;
+  const fullPrompt = systemPromptSuffix ? `${SYSTEM_PROMPT}\n\n${systemPromptSuffix}` : SYSTEM_PROMPT;
+  const session = createSession(fullPrompt, toolDefinitions, extraFunctionTools);
 
   let response = await session.send(
     "Analyse today's British sports markets and identify value betting opportunities. " +

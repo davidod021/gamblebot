@@ -22,6 +22,8 @@ function optionalInt(name: string, fallback: number): number {
 
 const provider = (process.env.MESSAGING_PROVIDER ?? 'whatsapp') as 'whatsapp' | 'telegram';
 const modelProvider = (process.env.MODEL_PROVIDER ?? 'anthropic') as 'anthropic' | 'gemini' | 'gemini-adk';
+const a2aRole = (process.env.A2A_ROLE ?? 'standalone') as 'standalone' | 'specialist' | 'coordinator';
+const a2aSport = (process.env.A2A_SPORT ?? '') as 'football' | 'cricket' | 'rugby' | '';
 
 function requiredForProvider(name: string, forProvider: 'whatsapp' | 'telegram'): string {
   const value = process.env[name];
@@ -82,6 +84,18 @@ export const config = {
     maxStakePerBet: optionalFloat('MAX_STAKE_PER_BET', 50),
     approvalTimeoutSeconds: optionalInt('APPROVAL_TIMEOUT_SECONDS', 300),
     hoursAhead: optionalInt('HOURS_AHEAD', 24),
+  },
+  a2a: {
+    role: a2aRole,
+    sport: a2aSport,
+    port: optionalInt('A2A_PORT', 3001),
+    /** When set, the agent starts an A2A peer server alongside its normal loop. */
+    peerPort: optional('A2A_PEER_PORT') ? optionalInt('A2A_PEER_PORT', 0) : undefined,
+    /** URL of a remote peer agent to consult for pooled research. */
+    peerUrl: optional('A2A_PEER_URL'),
+    footballUrl: optional('A2A_FOOTBALL_URL'),
+    cricketUrl: optional('A2A_CRICKET_URL'),
+    rugbyUrl: optional('A2A_RUGBY_URL'),
   },
   strategy: {
     // Bankroll at which we transition from Bootstrap → Compound phase (multiple of initial)
