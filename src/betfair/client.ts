@@ -25,6 +25,7 @@ async function apiPost<T>(baseUrl: string, endpoint: string, body: Record<string
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
+      timeout: 15000,
     });
     return response.data;
   } catch (err) {

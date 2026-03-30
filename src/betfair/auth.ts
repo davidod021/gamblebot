@@ -23,6 +23,7 @@ export async function login(): Promise<string> {
       'Content-Type': 'application/x-www-form-urlencoded',
       Accept: 'application/json',
     },
+    timeout: 15000,
   });
 
   if (response.data.status !== 'SUCCESS') {

@@ -207,3 +207,5 @@ Write-Host ""
 Write-Host "View logs:"
 Write-Host "  gcloud run jobs executions list --job=$JobName --region=$Region --project=$ProjectId"
 Write-Host "  gcloud logging read 'resource.type=cloud_run_job AND resource.labels.job_name=$JobName' --project=$ProjectId --limit=50"
+
+exit 0

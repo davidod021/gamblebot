@@ -67,7 +67,7 @@ f* = (b × p − q) / b
 
 ## Session Rules
 - Check account balance and open bets at the start of every session
-- Maximum 3–4 bets per session to avoid overexposure
+- Maximum 3–4 new bets per session to avoid overexposure (open bets from prior sessions do not count toward this limit)
 - Minimum £500 liquidity available in the market before betting
 - Avoid in-play betting
 - If you cannot find enough research to be confident, skip the market

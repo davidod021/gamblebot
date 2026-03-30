@@ -96,14 +96,14 @@ export class GeminiAdkSession implements ModelSession {
       instruction: systemPrompt,
       tools: [new AgentTool({ agent: researchAgent }), ...functionTools, ...extraFunctionTools, submitAnalysisTool],
       afterModelCallback: ({ response }) => {
-        // If the model returns with no content and no function calls, it has
-        // silently terminated. Inject a submit_analysis call so the loop
-        // continues and we capture a summary.
+        // If the model returns with no function calls and no visible text (e.g.
+        // only thinking blocks, or truly empty), it has silently terminated.
+        // Inject a submit_analysis call so we always capture a summary.
         const hasFunctionCalls = response.content?.parts?.some(
           (p) => (p as Record<string, unknown>).functionCall,
         );
         const hasText = response.content?.parts?.some((p) => p.text && !p.thought);
-        if (!hasFunctionCalls && !hasText && !response.content) {
+        if (!hasFunctionCalls && !hasText) {
           console.log('[ADK] Empty response intercepted — injecting submit_analysis call');
           return {
             content: {
@@ -139,9 +139,53 @@ export class GeminiAdkSession implements ModelSession {
     this.capturedSummary = null;
     const content: ContentBlock[] = [];
 
-    for await (const event of this.runner.runEphemeral({
+    // Use a persistent session so we can send a follow-up if the model exits early
+    const session = await this.sessionService.createSession({
+      appName: this.appName,
       userId: this.userId,
-      newMessage: { role: 'user', parts: [{ text: userMessage }] },
+    });
+
+    await this.runTurn(session.id, { role: 'user', parts: [{ text: userMessage }] }, content);
+
+    // If the model exited without calling submit_analysis (e.g. Gemini narrated
+    // "call:get_current_bets{}" as plain text instead of invoking the tool),
+    // send a follow-up to prompt it to continue properly.
+    if (!this.capturedSummary) {
+      console.warn('[ADK] Agent exited without submit_analysis — sending follow-up prompt');
+      await this.runTurn(
+        session.id,
+        {
+          role: 'user',
+          parts: [
+            {
+              text:
+                'You exited without completing the analysis. Please continue: call list_upcoming_markets ' +
+                'to discover today\'s markets, research them using research_sports_news, check odds with ' +
+                'get_market_odds, and call submit_analysis when finished.',
+            },
+          ],
+        },
+        content,
+      );
+    }
+
+    // If the model called submit_analysis, use that as the text content
+    if (this.capturedSummary && !content.some((b) => b.type === 'text')) {
+      content.push({ type: 'text', text: this.capturedSummary });
+    }
+
+    return { stopReason: 'end_turn', content };
+  }
+
+  private async runTurn(
+    sessionId: string,
+    message: { role: string; parts: { text: string }[] },
+    content: ContentBlock[],
+  ): Promise<void> {
+    for await (const event of this.runner.runAsync({
+      sessionId,
+      userId: this.userId,
+      newMessage: message,
     })) {
       const parts = event.content?.parts ?? [];
 
@@ -174,13 +218,6 @@ export class GeminiAdkSession implements ModelSession {
         }
       }
     }
-
-    // If the model called submit_analysis, use that as the text content
-    if (this.capturedSummary && !content.some((b) => b.type === 'text')) {
-      content.push({ type: 'text', text: this.capturedSummary });
-    }
-
-    return { stopReason: 'end_turn', content };
   }
 
   // ADK handles all tool calls internally — these are no-ops

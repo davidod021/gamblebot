@@ -207,3 +207,5 @@ echo "  gcloud logging read 'resource.type=cloud_run_job AND resource.labels.job
 echo ""
 echo "Trigger manually now? Run:"
 echo "  gcloud run jobs execute $JOB_NAME --region=$REGION --project=$PROJECT_ID"
+
+exit 0
