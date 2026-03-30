@@ -154,6 +154,12 @@ export class GeminiAdkSession implements ModelSession {
         }
       }
 
+      // Surface ADK-level errors (e.g. invalid API key, quota exceeded)
+      const ev = event as unknown as Record<string, unknown>;
+      if (ev.errorCode) {
+        throw new Error(`[ADK] Model error ${ev.errorCode}: ${ev.errorMessage ?? 'unknown error'}`);
+      }
+
       // Collect and log all text/thinking from every event
       for (const part of parts) {
         if (part.thought && part.text) {

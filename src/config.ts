@@ -1,13 +1,23 @@
 import 'dotenv/config';
 
+// Secret Manager on GCP writes secret values via a UTF-8 file that may include
+// a BOM (U+FEFF). Strip it from every env var so downstream consumers (including
+// third-party SDKs that read process.env directly) never see it.
+for (const key of Object.keys(process.env)) {
+  const val = process.env[key];
+  if (val && val.charCodeAt(0) === 0xFEFF) {
+    process.env[key] = val.slice(1);
+  }
+}
+
 function required(name: string): string {
-  const value = process.env[name];
+  const value = process.env[name]?.trim();
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
   return value;
 }
 
 function optional(name: string): string | undefined {
-  return process.env[name] || undefined;
+  return process.env[name]?.trim() || undefined;
 }
 
 function optionalFloat(name: string, fallback: number): number {
@@ -20,13 +30,13 @@ function optionalInt(name: string, fallback: number): number {
   return value ? parseInt(value, 10) : fallback;
 }
 
-const provider = (process.env.MESSAGING_PROVIDER ?? 'whatsapp') as 'whatsapp' | 'telegram';
-const modelProvider = (process.env.MODEL_PROVIDER ?? 'anthropic') as 'anthropic' | 'gemini' | 'gemini-adk';
-const a2aRole = (process.env.A2A_ROLE ?? 'standalone') as 'standalone' | 'specialist' | 'coordinator';
-const a2aSport = (process.env.A2A_SPORT ?? '') as 'football' | 'cricket' | 'rugby' | '';
+const provider = (process.env.MESSAGING_PROVIDER?.trim() ?? 'whatsapp') as 'whatsapp' | 'telegram';
+const modelProvider = (process.env.MODEL_PROVIDER?.trim() ?? 'anthropic') as 'anthropic' | 'gemini' | 'gemini-adk';
+const a2aRole = (process.env.A2A_ROLE?.trim() ?? 'standalone') as 'standalone' | 'specialist' | 'coordinator';
+const a2aSport = (process.env.A2A_SPORT?.trim() ?? '') as 'football' | 'cricket' | 'rugby' | '';
 
 function requiredForProvider(name: string, forProvider: 'whatsapp' | 'telegram'): string {
-  const value = process.env[name];
+  const value = process.env[name]?.trim();
   if (!value && provider === forProvider) {
     throw new Error(`Missing required environment variable for ${forProvider}: ${name}`);
   }
@@ -34,7 +44,7 @@ function requiredForProvider(name: string, forProvider: 'whatsapp' | 'telegram')
 }
 
 function requiredForModel(name: string, forModel: 'anthropic' | 'gemini'): string {
-  const value = process.env[name];
+  const value = process.env[name]?.trim();
   const activeIsGemini = modelProvider === 'gemini' || modelProvider === 'gemini-adk';
   const needsThisKey = forModel === 'gemini' ? activeIsGemini : modelProvider === forModel;
   if (!value && needsThisKey) {

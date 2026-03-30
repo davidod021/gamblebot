@@ -89,6 +89,7 @@ Today's date: ${new Date().toISOString().split('T')[0]}
 Current time (London): ${new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' })}`;
 
 const MAX_ITERATIONS = 40;
+const MAX_RUNTIME_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export async function runAgent(options: {
   extraFunctionTools?: FunctionTool[];
@@ -138,6 +139,12 @@ export async function runAgent(options: {
   while (iteration < MAX_ITERATIONS) {
     iteration++;
     console.log(`\n--- Iteration ${iteration} ---`);
+
+    if (Date.now() - startTime.getTime() >= MAX_RUNTIME_MS) {
+      console.warn('24-hour runtime limit reached');
+      await sendNotification('⚠️ *GambleBot*: 24-hour runtime limit reached — agent stopped.');
+      break;
+    }
 
     // Log response content
     for (const block of response.content) {
