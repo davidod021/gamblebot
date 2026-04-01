@@ -57,13 +57,15 @@ async function runContinuous(): Promise<void> {
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
 
-  // Prevent concurrent agent runs
+  // Prevent concurrent agent runs; queue at most one pending trigger
   let isRunning = false;
+  let pendingRun: { userPrompt?: string } | null = null;
 
   const triggerAgentRun = async (userPrompt?: string): Promise<void> => {
     if (isRunning) {
-      console.log('[Continuous] Agent already running — ignoring prompt.');
-      await sendNotification('⚠️ Agent is currently running. Please wait before sending another prompt.');
+      console.log('[Continuous] Agent already running — queuing request.');
+      pendingRun = { userPrompt };
+      await sendNotification('⏳ Agent is currently running. Your request has been queued and will run next.');
       return;
     }
     isRunning = true;
@@ -76,17 +78,25 @@ async function runContinuous(): Promise<void> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[Continuous] Agent run error:', msg);
-      await sendNotification(`❌ *GambleBot Error*\n\n\`${msg}\``);
+      await sendNotification(`❌ *${config.agentName} Error*\n\n\`${msg}\``);
     } finally {
       isRunning = false;
+      if (pendingRun !== null) {
+        const queued = pendingRun;
+        pendingRun = null;
+        console.log('[Continuous] Running queued request.');
+        void triggerAgentRun(queued.userPrompt);
+      }
     }
   };
 
-  // Listen for user messages from WhatsApp / Telegram
-  const { startMessagingListener } = await import('./messaging/listener.js');
-  startMessagingListener((prompt) => {
-    void triggerAgentRun(prompt);
-  });
+  // Listen for user messages from WhatsApp / Telegram (skip if --no-listener)
+  if (!config.continuous.noListener) {
+    const { startMessagingListener } = await import('./messaging/listener.js');
+    startMessagingListener((prompt) => {
+      void triggerAgentRun(prompt);
+    });
+  }
 
   // Scheduled auto-run
   const intervalMinutes = config.continuous.autoRunIntervalMinutes;
@@ -104,7 +114,7 @@ async function runContinuous(): Promise<void> {
     : '';
 
   await sendNotification(
-    `🤖 *GambleBot — Continuous Mode*\n\n` +
+    `🤖 *${config.agentName} — Continuous Mode*\n\n` +
       `Send any message to start an analysis.${autoRunNote}\n` +
       `A2A peer server active on port ${a2aPort}.`,
   );
@@ -127,7 +137,7 @@ async function runSpecialist(): Promise<void> {
   };
 
   const executor = new SportSpecialistExecutor(sport);
-  const agentCard = buildAgentCard(sport, port, sportDescriptions[sport] ?? `${sport} specialist`);
+  const agentCard = buildAgentCard(sport, port, sportDescriptions[sport] ?? `${sport} specialist`, config.agentName);
   startA2AServer(executor, agentCard, port);
 
   console.log(`\n[A2A] ${sport} specialist ready. Ctrl+C to stop.`);
@@ -221,7 +231,8 @@ async function startPeerServer(port: number): Promise<http.Server> {
   const agentCard = buildAgentCard(
     'peer',
     port,
-    'GambleBot peer agent — shares market research and analysis via A2A. Read-only: cannot place bets.',
+    `${config.agentName} peer agent — shares market research and analysis via A2A. Read-only: cannot place bets.`,
+    config.agentName,
   );
 
   const server = startA2AServer(executor, agentCard, port);

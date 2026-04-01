@@ -30,9 +30,30 @@ function optionalInt(name: string, fallback: number): number {
   return value ? parseInt(value, 10) : fallback;
 }
 
+// CLI argument parsing — overrides env vars when provided
+// Usage: node dist/index.js [--mode <continuous|standalone|coordinator|specialist>] [--interval <minutes>] [--live|--dry-run]
+const argv = process.argv.slice(2);
+function argValue(flag: string): string | null {
+  // Support --flag value and --flag=value forms
+  const eqIdx = argv.findIndex(a => a.startsWith(`${flag}=`));
+  if (eqIdx !== -1) return argv[eqIdx].slice(flag.length + 1);
+  const spaceIdx = argv.indexOf(flag);
+  if (spaceIdx !== -1 && spaceIdx + 1 < argv.length) return argv[spaceIdx + 1];
+  return null;
+}
+const argA2aMode = argValue('--mode') as 'continuous' | 'standalone' | 'coordinator' | 'specialist' | null;
+const argInterval = argValue('--interval');
+const argName = argValue('--name');
+const argNoListener = argv.includes('--no-listener');
+// --live forces live betting on; --dry-run forces it off; neither = defer to LIVE_BETTING env var
+const argLiveBetting: boolean | null =
+  argv.includes('--live') ? true : argv.includes('--dry-run') ? false : null;
+
 const provider = (process.env.MESSAGING_PROVIDER?.trim() ?? 'whatsapp') as 'whatsapp' | 'telegram';
 const modelProvider = (process.env.MODEL_PROVIDER?.trim() ?? 'anthropic') as 'anthropic' | 'gemini' | 'gemini-adk';
-const a2aRole = (process.env.A2A_ROLE?.trim() ?? 'standalone') as 'standalone' | 'specialist' | 'coordinator';
+const a2aRoleEnv = (process.env.A2A_ROLE?.trim() ?? 'standalone') as 'standalone' | 'specialist' | 'coordinator';
+const a2aRole: 'standalone' | 'specialist' | 'coordinator' =
+  argA2aMode && argA2aMode !== 'continuous' ? argA2aMode : a2aRoleEnv;
 const a2aSport = (process.env.A2A_SPORT?.trim() ?? '') as 'football' | 'cricket' | 'rugby' | '';
 
 function requiredForProvider(name: string, forProvider: 'whatsapp' | 'telegram'): string {
@@ -54,6 +75,7 @@ function requiredForModel(name: string, forModel: 'anthropic' | 'gemini'): strin
 }
 
 export const config = {
+  agentName: argName ?? optional('AGENT_NAME') ?? 'GambleBot',
   betfair: {
     username: required('BETFAIR_USERNAME'),
     password: required('BETFAIR_PASSWORD'),
@@ -89,7 +111,7 @@ export const config = {
     chatId: requiredForProvider('TELEGRAM_CHAT_ID', 'telegram'),
   },
   betting: {
-    liveBetting: process.env.LIVE_BETTING === 'true',
+    liveBetting: argLiveBetting ?? process.env.LIVE_BETTING === 'true',
     maxAutoStake: optionalFloat('MAX_AUTO_STAKE', 10),
     maxStakePerBet: optionalFloat('MAX_STAKE_PER_BET', 50),
     approvalTimeoutSeconds: optionalInt('APPROVAL_TIMEOUT_SECONDS', 300),
@@ -109,12 +131,13 @@ export const config = {
   },
   continuous: {
     /** When true, the app runs indefinitely: A2A peer server stays up and messaging is polled for user prompts. */
-    enabled: process.env.CONTINUOUS_MODE === 'true',
+    enabled: argA2aMode === 'continuous' || process.env.CONTINUOUS_MODE === 'true',
     /**
      * How often (in minutes) the agent runs automatically with no user prompt.
      * 0 = disabled (manual triggers only).
      */
-    autoRunIntervalMinutes: optionalInt('AUTO_RUN_INTERVAL_MINUTES', 0),
+    autoRunIntervalMinutes: argInterval !== null ? parseInt(argInterval, 10) : optionalInt('AUTO_RUN_INTERVAL_MINUTES', 0),
+    noListener: argNoListener,
   },
   strategy: {
     // Bankroll at which we transition from Bootstrap → Compound phase (multiple of initial)

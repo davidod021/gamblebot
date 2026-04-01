@@ -195,6 +195,31 @@ Set `CONTINUOUS_MODE=true` to keep the process running indefinitely:
 CONTINUOUS_MODE=true AUTO_RUN_INTERVAL_MINUTES=360 npm run dev
 ```
 
+### CLI Arguments
+
+You can override the operating mode and auto-run interval directly on the command line without changing `.env`. This is useful for one-off runs or quick testing.
+
+| Argument | Values | Description |
+|---|---|---|
+| `--mode` | `continuous`, `standalone`, `coordinator`, `specialist` | Operating mode — overrides `CONTINUOUS_MODE` / `A2A_ROLE` |
+| `--interval` | integer (minutes) | Auto-run interval — overrides `AUTO_RUN_INTERVAL_MINUTES` |
+| `--live` | _(flag)_ | Enable live betting — overrides `LIVE_BETTING=true` |
+| `--dry-run` | _(flag)_ | Disable live betting — overrides `LIVE_BETTING=false` |
+
+```bash
+# Temporarily enable continuous mode with a 2-minute auto-run interval
+npm run dev -- --mode continuous --interval 2
+
+# Run once as coordinator without editing .env
+npm run dev -- --mode coordinator
+
+# Production build — continuous with a 5-minute interval, live betting on
+node dist/index.js --mode continuous --interval 5 --live
+
+# Force a dry run even if LIVE_BETTING=true in .env
+npm run dev -- --dry-run
+```
+
 ---
 
 ## Cloud Deployment

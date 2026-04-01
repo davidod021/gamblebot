@@ -4,11 +4,23 @@ import { Type } from '@google/genai';
 import type { Schema } from '@google/genai';
 import { ClientFactory } from '@a2a-js/sdk/client';
 import type { Message, Task } from '@a2a-js/sdk';
+import { sendNotification } from '../approval/index.js';
 
 export interface SpecialistUrls {
   football?: string;
   cricket?: string;
   rugby?: string;
+}
+
+const A2A_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms / 60000} minutes`)), ms),
+    ),
+  ]);
 }
 
 function extractText(result: Message | Task): string {
@@ -51,16 +63,23 @@ function createSpecialistTool(
         if (!cachedClient) {
           cachedClient = await factory.createFromUrl(agentUrl);
         }
-        const result = await cachedClient.sendMessage({
-          message: {
-            kind: 'message',
-            messageId: crypto.randomUUID(),
-            role: 'user',
-            parts: [{ kind: 'text', text: task }],
-          },
-        });
+        const result = await withTimeout(
+          cachedClient.sendMessage({
+            message: {
+              kind: 'message',
+              messageId: crypto.randomUUID(),
+              role: 'user',
+              parts: [{ kind: 'text', text: task }],
+            },
+          }),
+          A2A_TIMEOUT_MS,
+          `${sport} specialist`,
+        );
         const text = extractText(result);
         console.log(`[A2A] ${sport} specialist responded (${text.length} chars)`);
+        const displayName = `${sport.charAt(0).toUpperCase() + sport.slice(1)} Specialist`;
+        const preview = text.length > 400 ? text.slice(0, 400) + '…' : text;
+        await sendNotification(`📡 *A2A: ${displayName}*\n\nReceived analysis from *${displayName}*:\n\n${preview}`);
         return { analysis: text };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -89,9 +108,23 @@ async function connectWithRetry(
   throw new Error('unreachable');
 }
 
+async function fetchPeerName(peerUrl: string): Promise<string> {
+  try {
+    const res = await fetch(`${peerUrl}/.well-known/agent-card.json`);
+    if (res.ok) {
+      const card = await res.json() as { name?: string };
+      return card.name ?? 'Peer Agent';
+    }
+  } catch {
+    // ignore — fall back to default
+  }
+  return 'Peer Agent';
+}
+
 export function createPeerTool(peerUrl: string): FunctionTool {
   const factory = new ClientFactory();
   let cachedClient: Awaited<ReturnType<typeof factory.createFromUrl>> | null = null;
+  let cachedPeerName: string | null = null;
 
   return new FunctionTool({
     name: 'consult_peer',
@@ -115,18 +148,28 @@ export function createPeerTool(peerUrl: string): FunctionTool {
       console.log(`\n[A2A] Consulting peer at ${peerUrl}`);
       try {
         if (!cachedClient) {
-          cachedClient = await connectWithRetry(factory, peerUrl);
+          [cachedClient, cachedPeerName] = await Promise.all([
+            connectWithRetry(factory, peerUrl),
+            fetchPeerName(peerUrl),
+          ]);
         }
-        const result = await cachedClient.sendMessage({
-          message: {
-            kind: 'message',
-            messageId: crypto.randomUUID(),
-            role: 'user',
-            parts: [{ kind: 'text', text: task }],
-          },
-        });
+        const result = await withTimeout(
+          cachedClient.sendMessage({
+            message: {
+              kind: 'message',
+              messageId: crypto.randomUUID(),
+              role: 'user',
+              parts: [{ kind: 'text', text: task }],
+            },
+          }),
+          A2A_TIMEOUT_MS,
+          'Peer agent',
+        );
         const text = extractText(result);
+        const peerName = cachedPeerName ?? 'Peer Agent';
         console.log(`[A2A] Peer responded (${text.length} chars)`);
+        const preview = text.length > 400 ? text.slice(0, 400) + '…' : text;
+        await sendNotification(`📡 *A2A: ${peerName}*\n\nReceived analysis from *${peerName}*:\n\n${preview}`);
         return { analysis: text };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

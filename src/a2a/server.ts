@@ -99,9 +99,12 @@ export function buildAgentCard(
   sport: string,
   port: number,
   description: string,
+  agentName = 'GambleBot',
 ): AgentCard {
+  const roleName = sport.charAt(0).toUpperCase() + sport.slice(1);
+  const cardName = sport === 'peer' ? `${agentName} Peer Agent` : `${agentName} ${roleName} Specialist`;
   return {
-    name: `GambleBot ${sport.charAt(0).toUpperCase() + sport.slice(1)} Specialist`,
+    name: cardName,
     description,
     version: '1.0.0',
     protocolVersion: '0.2.6',
