@@ -94,6 +94,8 @@ const MAX_RUNTIME_MS = 24 * 60 * 60 * 1000; // 24 hours
 export async function runAgent(options: {
   extraFunctionTools?: FunctionTool[];
   systemPromptSuffix?: string;
+  /** Custom prompt from a user message; overrides the default analysis prompt. */
+  userPrompt?: string;
 } = {}): Promise<void> {
   const startTime = new Date();
   console.log('\n' + '='.repeat(50));
@@ -124,15 +126,17 @@ export async function runAgent(options: {
       `Time: ${startTime.toLocaleString('en-GB', { timeZone: 'Europe/London' })}`,
   );
 
-  const { extraFunctionTools = [], systemPromptSuffix = '' } = options;
+  const { extraFunctionTools = [], systemPromptSuffix = '', userPrompt } = options;
   const fullPrompt = systemPromptSuffix ? `${SYSTEM_PROMPT}\n\n${systemPromptSuffix}` : SYSTEM_PROMPT;
   const session = createSession(fullPrompt, toolDefinitions, extraFunctionTools);
 
-  let response = await session.send(
+  const initialMessage =
+    userPrompt ??
     "Analyse today's British sports markets and identify value betting opportunities. " +
       'Start by checking my account balance and any open bets, then research the upcoming markets. ' +
-      'When finished, call submit_analysis with your complete written summary.',
-  );
+      'When finished, call submit_analysis with your complete written summary.';
+
+  let response = await session.send(initialMessage);
 
   let iteration = 0;
 

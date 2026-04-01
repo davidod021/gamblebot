@@ -5,6 +5,11 @@ import type http from 'node:http';
 
 async function main(): Promise<void> {
   try {
+    if (config.continuous.enabled) {
+      await runContinuous();
+      return;
+    }
+
     // Start peer A2A server if configured (runs alongside any mode)
     let peerServer: http.Server | undefined;
     if (config.a2a.peerPort) {
@@ -35,6 +40,79 @@ async function main(): Promise<void> {
   }
 }
 
+async function runContinuous(): Promise<void> {
+  console.log('\n' + '='.repeat(50));
+  console.log('GambleBot — Continuous Mode');
+  console.log('='.repeat(50) + '\n');
+
+  // Start A2A peer server so other agents can connect at any time
+  const a2aPort = config.a2a.peerPort ?? config.a2a.port;
+  const peerServer = await startPeerServer(a2aPort);
+
+  // Graceful shutdown on SIGTERM / SIGINT (e.g. Docker stop, Cloud Run scale-down)
+  const shutdown = () => {
+    console.log('\n[Continuous] Shutting down...');
+    void shutdownPeerServer(peerServer).then(() => process.exit(0));
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+
+  // Prevent concurrent agent runs
+  let isRunning = false;
+
+  const triggerAgentRun = async (userPrompt?: string): Promise<void> => {
+    if (isRunning) {
+      console.log('[Continuous] Agent already running — ignoring prompt.');
+      await sendNotification('⚠️ Agent is currently running. Please wait before sending another prompt.');
+      return;
+    }
+    isRunning = true;
+    try {
+      if (config.a2a.role === 'coordinator') {
+        await runCoordinator(userPrompt);
+      } else {
+        await runStandalone(userPrompt);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Continuous] Agent run error:', msg);
+      await sendNotification(`❌ *GambleBot Error*\n\n\`${msg}\``);
+    } finally {
+      isRunning = false;
+    }
+  };
+
+  // Listen for user messages from WhatsApp / Telegram
+  const { startMessagingListener } = await import('./messaging/listener.js');
+  startMessagingListener((prompt) => {
+    void triggerAgentRun(prompt);
+  });
+
+  // Scheduled auto-run
+  const intervalMinutes = config.continuous.autoRunIntervalMinutes;
+  if (intervalMinutes > 0) {
+    const intervalMs = intervalMinutes * 60 * 1000;
+    console.log(`[Continuous] Auto-run scheduled every ${intervalMinutes} minute(s).`);
+    setInterval(() => {
+      console.log('[Continuous] Scheduled auto-run triggered.');
+      void triggerAgentRun();
+    }, intervalMs);
+  }
+
+  const autoRunNote = intervalMinutes > 0
+    ? `\nAuto-run: every ${intervalMinutes} minute(s).`
+    : '';
+
+  await sendNotification(
+    `🤖 *GambleBot — Continuous Mode*\n\n` +
+      `Send any message to start an analysis.${autoRunNote}\n` +
+      `A2A peer server active on port ${a2aPort}.`,
+  );
+
+  console.log(`[Continuous] Ready on port ${a2aPort}. Waiting for messages or A2A requests...`);
+  // Process stays alive via the A2A server and the messaging polling loop
+}
+
 async function runSpecialist(): Promise<void> {
   const { sport, port } = config.a2a;
   if (!sport) throw new Error('A2A_SPORT must be set when A2A_ROLE=specialist (football|cricket|rugby)');
@@ -55,13 +133,13 @@ async function runSpecialist(): Promise<void> {
   console.log(`\n[A2A] ${sport} specialist ready. Ctrl+C to stop.`);
 }
 
-async function runCoordinator(): Promise<void> {
+async function runCoordinator(userPrompt?: string): Promise<void> {
   const { footballUrl, cricketUrl, rugbyUrl } = config.a2a;
   const hasAnyPeer = footballUrl || cricketUrl || rugbyUrl;
 
   if (!hasAnyPeer) {
     console.warn('[A2A] Coordinator mode: no specialist URLs configured. Running as standard agent.');
-    await runAgent();
+    await runAgent({ userPrompt });
     return;
   }
 
@@ -99,14 +177,14 @@ Use the \`consult_*_specialist\` tools to delegate sport-specific market analysi
 The specialists handle research; you handle final validation and execution.`;
 
   console.log(`\n[A2A] Coordinator mode — connected specialists: ${sportList}`);
-  await runAgent({ extraFunctionTools, systemPromptSuffix });
+  await runAgent({ extraFunctionTools, systemPromptSuffix, userPrompt });
 }
 
-async function runStandalone(): Promise<void> {
+async function runStandalone(userPrompt?: string): Promise<void> {
   const { peerUrl } = config.a2a;
 
   if (!peerUrl) {
-    await runAgent();
+    await runAgent({ userPrompt });
     return;
   }
 
@@ -132,7 +210,7 @@ The peer can research markets and check odds but **cannot place bets** — only 
 4. Make final betting decisions based on the combined research`;
 
   console.log(`\n[A2A] Standalone + peer mode — peer at ${peerUrl}`);
-  await runAgent({ extraFunctionTools: [peerTool], systemPromptSuffix });
+  await runAgent({ extraFunctionTools: [peerTool], systemPromptSuffix, userPrompt });
 }
 
 async function startPeerServer(port: number): Promise<http.Server> {

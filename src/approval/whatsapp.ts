@@ -12,7 +12,7 @@ const twilioAuth = {
   password: config.whatsapp.authToken,
 };
 
-interface TwilioMessage {
+export interface TwilioMessage {
   sid: string;
   body: string;
   direction: 'inbound' | 'outbound-api' | 'outbound-reply';
@@ -45,7 +45,7 @@ async function sendMessage(body: string): Promise<string> {
   return response.data.sid;
 }
 
-async function getInboundMessagesSince(since: Date): Promise<TwilioMessage[]> {
+export async function getInboundMessagesSince(since: Date): Promise<TwilioMessage[]> {
   // Twilio's DateSent filter only accepts a date (YYYY-MM-DD), so we fetch
   // that day's messages and filter by exact time client-side.
   const dateSent = since.toISOString().split('T')[0];

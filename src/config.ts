@@ -107,6 +107,15 @@ export const config = {
     cricketUrl: optional('A2A_CRICKET_URL'),
     rugbyUrl: optional('A2A_RUGBY_URL'),
   },
+  continuous: {
+    /** When true, the app runs indefinitely: A2A peer server stays up and messaging is polled for user prompts. */
+    enabled: process.env.CONTINUOUS_MODE === 'true',
+    /**
+     * How often (in minutes) the agent runs automatically with no user prompt.
+     * 0 = disabled (manual triggers only).
+     */
+    autoRunIntervalMinutes: optionalInt('AUTO_RUN_INTERVAL_MINUTES', 0),
+  },
   strategy: {
     // Bankroll at which we transition from Bootstrap → Compound phase (multiple of initial)
     growthTargetMultiplier: optionalFloat('GROWTH_TARGET_MULTIPLIER', 5),
